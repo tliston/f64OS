@@ -9,6 +9,10 @@
 (   after IWAD - 6FFFFFF  heap for malloc                               )
 (   F00000 - F03FFF    Sound Blaster DMA buffer, below 16 MiB           )
 
+HERE @ LATEST @
+CONSTANT DOOM-ORIG-LATEST
+CONSTANT DOOM-ORIG-HERE
+
 HEX
 1000000 CONSTANT DOOM-BASE
 1C00000 CONSTANT DOOM-LIMIT
@@ -66,6 +70,12 @@ DECIMAL
     S" freedoom1.wad" TRY-WAD
     S" freedoom2.wad" TRY-WAD
     S" freedm.wad" TRY-WAD
+;
+
+: DOOM-UNLOAD ( -- )
+    DOOM-ORIG-LATEST LATEST !
+    DOOM-ORIG-HERE   HERE !
+    ." DOOM unloaded (" UNUSED . ." cells free)" CR
 ;
 
 : DOOM ( -- )
