@@ -81,17 +81,6 @@ exit_with_grace_and_beauty:
 
 cold_start:
         dq QUIT
-f64_source:     
-        db "/usr/include/f64/f64.fs"
-f64_source_end: 
-        db 0h
-loadf64_fail_msg: 
-        db "ERROR Could not open '"
-loadf64_fail_msg_end:
-loadf64_fail_msg2: 
-        db "'."
-        db `\n`
-loadf64_fail_msg_end2:
 
 ; Various flags for the dictionary word header
 %define F_IMMED   0x80
@@ -517,11 +506,6 @@ defcode "DSP!", DSPSTORE
 ;	and compiling code, we might be reading words to execute, we might be asking for the user
 ;	to type their name -- ultimately it all comes in through KEY.
 ;
-;	The implementation of KEY uses an input buffer of a certain size (defined at the end of this
-;	file).  It calls the Linux read(2) system call to fill this buffer and tracks its position
-;	in the buffer using a couple of variables, and if it runs out of input buffer then it refills
-;	it automatically.  The other thing that KEY does is if it detects that stdin has closed, it
-;	exits the program, which is why when you hit ^D the FORTH system cleanly exits.
 
 defcode "KEY", KEY
         call _KEY
