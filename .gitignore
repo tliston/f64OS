@@ -1,4 +1,5 @@
 os.bin
+.vscode
 
 # DOOM: build outputs and WAD files (WADs are not part of this repo)
 doom/build/
