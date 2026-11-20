@@ -1,0 +1,781 @@
+( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f       )
+( This is part 2, zmachine2.f                            )
+
+: Z-TOKENIZE ( text-zaddr parse-zaddr dict-zaddr flag -- )
+  TO TK-FLAG
+  DUP Z-DICT-SETUP TO TK-DICT
+  TO TK-PARSE
+  TO TK-TEXT
+  TK-PARSE Z-B@ TO TK-MAX
+  0 TO TK-CNT
+  Z-VER 5 >= IF
+    2 TO TK-POS
+    TK-TEXT 1+ Z-B@ 2 + TO TK-END
+  ELSE
+    1 TO TK-POS
+    1
+    BEGIN
+      DUP TK-TEXT + Z-B@ 0<>
+    WHILE
+      1+
+    REPEAT
+    TO TK-END
+  THEN
+  BEGIN
+    TK-POS TK-END <
+  WHILE
+    TK-TEXT TK-POS + Z-B@
+    DUP 32 = IF
+      DROP 1 +TO TK-POS
+    ELSE DUP IS-DICT-SEP? IF
+      DROP TK-POS 1 TK-ADD-TOKEN
+      1 +TO TK-POS
+    ELSE
+      DROP
+      TK-POS TO TK-START
+      BEGIN
+        TK-POS TK-END < IF
+          TK-TEXT TK-POS + Z-B@
+          DUP 32 <> SWAP IS-DICT-SEP? NOT AND
+        ELSE
+          FALSE
+        THEN
+      WHILE
+        1 +TO TK-POS
+      REPEAT
+      TK-START  TK-POS TK-START -  TK-ADD-TOKEN
+    THEN THEN
+  REPEAT
+  TK-CNT TK-PARSE 1+ Z-B!
+;
+
+( --- Line Input [SREAD / AREAD] & Save/Restore ----------------------- )
+128 ALLOT CONSTANT IN-LINE-BUF
+0 VALUE IN-LEN
+0 VALUE IN-MAX
+
+: Z-READ-LINE ( max-len -- len )
+  Z-FLUSH-WRAP
+  0 TO Z-ROW-COUNT
+  TO IN-MAX
+  0 TO IN-LEN
+  BEGIN
+    KEY-RAW
+    DUP 10 = OVER 13 = OR IF
+      DROP Z-RAW-NL
+      IN-LEN EXIT
+    THEN
+    DUP 8 = OVER 127 = OR IF
+      DROP
+      IN-LEN 0> IF
+        -1 +TO IN-LEN
+        8 EMIT
+        -1 +TO Z-COL
+      THEN
+    ELSE DUP 32 127 WITHIN IF
+      IN-LEN IN-MAX < IF
+        DUP EMIT
+        1 +TO Z-COL
+        DUP 65 91 WITHIN IF 32 + THEN
+        IN-LINE-BUF IN-LEN + C!
+        1 +TO IN-LEN
+      ELSE
+        DROP
+      THEN
+    ELSE
+      DROP
+    THEN THEN
+  AGAIN
+;
+
+( Save and Restore snapshot helpers )
+: Z-SNAPSHOT-SAVE ( mem-dst state-dst -- )
+  >R
+  Z-MEM SWAP Z-STAT-BASE 65536 MIN CMOVE
+  Z-PC       0  CELLS R@ + !
+  Z-SP       1  CELLS R@ + !
+  Z-FP       2  CELLS R@ + !
+  Z-NARGS    3  CELLS R@ + !
+  Z-NLOCALS  4  CELLS R@ + !
+  Z-LOCALS   5  CELLS R@ + 16 CELLS CMOVE
+  Z-STACK    21 CELLS R@ + 128 CELLS CMOVE
+  Z-FRAMES   149 CELLS R> + 96 CELLS CMOVE
+;
+
+: Z-SNAPSHOT-RESTORE ( mem-src state-src -- )
+  >R
+  Z-MEM Z-STAT-BASE 65536 MIN CMOVE
+  0  CELLS R@ + @ TO Z-PC
+  1  CELLS R@ + @ TO Z-SP
+  2  CELLS R@ + @ TO Z-FP
+  3  CELLS R@ + @ TO Z-NARGS
+  4  CELLS R@ + @ TO Z-NLOCALS
+  5  CELLS R@ + Z-LOCALS 16 CELLS CMOVE
+  21 CELLS R@ + Z-STACK  128 CELLS CMOVE
+  149 CELLS R> + Z-FRAMES 96 CELLS CMOVE
+;
+
+( --- Call Stack, Branches, and Return -------------------------------- )
+0 VALUE CALL-PADDR
+0 VALUE CALL-STORE?
+0 VALUE CALL-SVAR
+
+: Z-CALL ( do-store? -- )
+  TO CALL-STORE?
+  CALL-STORE? IF Z-PC@B TO CALL-SVAR ELSE 0 TO CALL-SVAR THEN
+  Z-NOPS 0= IF
+    CALL-STORE? IF 0 CALL-SVAR Z-VAR! THEN EXIT
+  THEN
+  OP0 TO CALL-PADDR
+  CALL-PADDR 0= IF
+    CALL-STORE? IF 0 CALL-SVAR Z-VAR! THEN EXIT
+  THEN
+  ( Save caller frame into Z-FRAMES[Z-FP] )
+  Z-FP 24 * CELLS Z-FRAMES +
+  Z-PC        OVER 0 CELLS + !
+  Z-SP        OVER 1 CELLS + !
+  CALL-STORE? OVER 2 CELLS + !
+  CALL-SVAR   OVER 3 CELLS + !
+  Z-NARGS     OVER 4 CELLS + !
+  Z-NLOCALS   OVER 5 CELLS + !
+  Z-LOCALS    SWAP 6 CELLS + 16 CELLS CMOVE
+  1 +TO Z-FP
+  CALL-PADDR Z-UNPACK TO Z-PC
+  Z-PC@B 15 MIN TO Z-NLOCALS
+  16 0 DO 0 I CELLS Z-LOCALS + ! LOOP
+  Z-VER 4 <= IF
+    Z-NLOCALS 0> IF
+      Z-NLOCALS 0 DO
+        Z-PC@W I CELLS Z-LOCALS + !
+      LOOP
+    THEN
+  THEN
+  Z-NOPS 1- TO Z-NARGS
+  Z-NARGS 0> IF
+    Z-NARGS Z-NLOCALS MIN 0 DO
+      I 1+ Z-OP@  I CELLS Z-LOCALS + !
+    LOOP
+  THEN
+;
+
+: Z-RET ( val -- )
+  Z-U16
+  Z-FP 0<= IF DROP 0 TO Z-RUNNING EXIT THEN
+  -1 +TO Z-FP
+  Z-FP 24 * CELLS Z-FRAMES +
+  DUP 0 CELLS + @ TO Z-PC
+  DUP 1 CELLS + @ TO Z-SP
+  DUP 2 CELLS + @ TO CALL-STORE?
+  DUP 3 CELLS + @ TO CALL-SVAR
+  DUP 4 CELLS + @ TO Z-NARGS
+  DUP 5 CELLS + @ TO Z-NLOCALS
+  6 CELLS + Z-LOCALS 16 CELLS CMOVE
+  CALL-STORE? IF
+    CALL-SVAR Z-VAR!
+  ELSE
+    DROP
+  THEN
+;
+
+: Z-BRANCH ( flag -- )
+  0<>
+  Z-PC@B
+  DUP 128 AND 0<>               ( cond b1 want-true )
+  ROT =                         ( b1 take-branch? )
+  SWAP DUP 64 AND IF
+    63 AND
+  ELSE
+    63 AND 256 * Z-PC@B OR
+    DUP 8192 >= IF 16384 - THEN
+  THEN                          ( take-branch? offset )
+  SWAP IF
+    DUP 0= IF
+      DROP 0 Z-RET
+    ELSE DUP 1 = IF
+      DROP 1 Z-RET
+    ELSE
+      2 - +TO Z-PC
+    THEN THEN
+  ELSE
+    DROP
+  THEN
+;
+
+( --- Random Number Generator ----------------------------------------- )
+123456789 VALUE Z-RNG-STATE
+
+: Z-RANDOM ( range -- res )
+  Z-SIGN
+  DUP 0<= IF
+    DUP 0= IF
+      DROP KSERVICES 8 + @ @ 98765 +
+    ELSE
+      NEGATE
+    THEN
+    TO Z-RNG-STATE
+    0
+  ELSE
+    Z-RNG-STATE 1103515245 * 12345 +
+    2147483647 AND DUP TO Z-RNG-STATE
+    SWAP MOD 1+
+  THEN
+;
+
+( --- Opcode Execution Tables: 2OP, 1OP, 0OP, VAR, EXT ---------------- )
+: EXEC-2OP ( op -- )
+  CASE
+    1 OF
+      FALSE
+      Z-NOPS 1 > IF
+        Z-NOPS 1 DO
+          OP0 I Z-OP@ = IF DROP TRUE LEAVE THEN
+        LOOP
+      THEN
+      Z-BRANCH
+    ENDOF
+    2  OF OP0 Z-SIGN OP1 Z-SIGN < Z-BRANCH ENDOF
+    3  OF OP0 Z-SIGN OP1 Z-SIGN > Z-BRANCH ENDOF
+    4  OF
+      OP0 Z-PEEK Z-SIGN 1- DUP OP0 Z-POKE
+      OP1 Z-SIGN < Z-BRANCH
+    ENDOF
+    5  OF
+      OP0 Z-PEEK Z-SIGN 1+ DUP OP0 Z-POKE
+      OP1 Z-SIGN > Z-BRANCH
+    ENDOF
+    6  OF OP0 OBJ-PARENT@ OP1 = Z-BRANCH ENDOF
+    7  OF OP0 OP1 AND OP1 = Z-BRANCH ENDOF
+    8  OF OP0 OP1 OR  Z-STORE ENDOF
+    9  OF OP0 OP1 AND Z-STORE ENDOF
+    10 OF OP0 OP1 OBJ-TEST-ATTR Z-BRANCH ENDOF
+    11 OF OP0 OP1 OBJ-SET-ATTR ENDOF
+    12 OF OP0 OP1 OBJ-CLR-ATTR ENDOF
+    13 OF OP1 OP0 Z-POKE ENDOF
+    14 OF OP0 OP1 OBJ-INSERT ENDOF
+    15 OF OP0 OP1 Z-SIGN 2 * + Z-U16 Z-W@ Z-STORE ENDOF
+    16 OF OP0 OP1 Z-SIGN + Z-U16 Z-B@ Z-STORE ENDOF
+    17 OF OP0 OP1 OBJ-GET-PROP Z-STORE ENDOF
+    18 OF OP0 OP1 OBJ-GET-PROP-ADDR Z-STORE ENDOF
+    19 OF OP0 OP1 OBJ-GET-NEXT-PROP Z-STORE ENDOF
+    20 OF OP0 Z-SIGN OP1 Z-SIGN + Z-U16 Z-STORE ENDOF
+    21 OF OP0 Z-SIGN OP1 Z-SIGN - Z-U16 Z-STORE ENDOF
+    22 OF OP0 Z-SIGN OP1 Z-SIGN * Z-U16 Z-STORE ENDOF
+    23 OF OP0 OP1 Z-DIV Z-STORE ENDOF
+    24 OF OP0 OP1 Z-MOD Z-STORE ENDOF
+    25 OF 2 TO Z-NOPS 1 Z-CALL ENDOF
+    26 OF 2 TO Z-NOPS 0 Z-CALL ENDOF
+    27 OF ( set_colour ) ENDOF
+    28 OF OP1 TO Z-FP OP0 Z-RET ENDOF
+  ENDCASE
+;
+
+: EXEC-1OP ( op -- )
+  CASE
+    0  OF OP0 0= Z-BRANCH ENDOF
+    1  OF OP0 OBJ-SIBLING@ DUP Z-STORE 0<> Z-BRANCH ENDOF
+    2  OF OP0 OBJ-CHILD@   DUP Z-STORE 0<> Z-BRANCH ENDOF
+    3  OF OP0 OBJ-PARENT@  Z-STORE ENDOF
+    4  OF OP0 PROP-DATA-LEN Z-STORE ENDOF
+    5  OF OP0 Z-PEEK 1+ Z-U16 OP0 Z-POKE ENDOF
+    6  OF OP0 Z-PEEK 1- Z-U16 OP0 Z-POKE ENDOF
+    7  OF OP0 Z-PRINT-ZSTR DROP ENDOF
+    8  OF 1 TO Z-NOPS 1 Z-CALL ENDOF
+    9  OF OP0 OBJ-REMOVE ENDOF
+    10 OF OP0 OBJ-PRINT-NAME ENDOF
+    11 OF OP0 Z-RET ENDOF
+    12 OF OP0 Z-SIGN 2 - +TO Z-PC ENDOF
+    13 OF OP0 Z-UNPACK Z-PRINT-ZSTR DROP ENDOF
+    14 OF OP0 Z-PEEK Z-STORE ENDOF
+    15 OF
+      Z-VER 4 <= IF
+        OP0 65535 XOR Z-STORE
+      ELSE
+        1 TO Z-NOPS 0 Z-CALL
+      THEN
+    ENDOF
+  ENDCASE
+;
+
+: DO-SAVE-OP ( -- )
+  Z-UNDO-MEM Z-UNDO-STATE Z-SNAPSHOT-SAVE
+  1 TO Z-HAS-UNDO
+  Z-VER 3 <= IF
+    TRUE Z-BRANCH
+  ELSE
+    1 Z-STORE
+  THEN
+;
+
+: DO-RESTORE-OP ( -- )
+  Z-HAS-UNDO IF
+    Z-UNDO-MEM Z-UNDO-STATE Z-SNAPSHOT-RESTORE
+    Z-VER 3 <= IF
+      TRUE Z-BRANCH
+    ELSE
+      2 Z-STORE
+    THEN
+  ELSE
+    Z-VER 3 <= IF
+      FALSE Z-BRANCH
+    ELSE
+      0 Z-STORE
+    THEN
+  THEN
+;
+
+: EXEC-0OP ( op -- )
+  CASE
+    0  OF 1 Z-RET ENDOF
+    1  OF 0 Z-RET ENDOF
+    2  OF Z-PC Z-PRINT-ZSTR TO Z-PC ENDOF
+    3  OF Z-PC Z-PRINT-ZSTR TO Z-PC 13 Z-EMIT 1 Z-RET ENDOF
+    4  OF ( nop ) ENDOF
+    5  OF DO-SAVE-OP ENDOF
+    6  OF DO-RESTORE-OP ENDOF
+    7  OF 0 TO Z-RUNNING ENDOF
+    8  OF Z-POP Z-RET ENDOF
+    9  OF
+      Z-VER 4 <= IF
+        Z-POP DROP
+      ELSE
+        Z-FP Z-STORE
+      THEN
+    ENDOF
+    10 OF 0 TO Z-RUNNING ENDOF
+    11 OF 13 Z-EMIT ENDOF
+    12 OF SHOW-STATUS ENDOF
+    13 OF TRUE Z-BRANCH ENDOF
+    15 OF TRUE Z-BRANCH ENDOF
+  ENDCASE
+;
+
+( Helper for VAR scan_table )
+0 VALUE ST-KEY
+0 VALUE ST-ADDR
+0 VALUE ST-COUNT
+0 VALUE ST-FORM
+
+: DO-SCAN-TABLE ( -- )
+  OP0 TO ST-KEY
+  OP1 TO ST-ADDR
+  OP2 TO ST-COUNT
+  Z-NOPS 3 > IF OP3 ELSE 130 THEN TO ST-FORM
+  ST-COUNT 0> IF
+    ST-COUNT 0 DO
+      ST-FORM 128 AND IF
+        ST-ADDR Z-W@ ST-KEY =
+      ELSE
+        ST-ADDR Z-B@ ST-KEY =
+      THEN
+      IF
+        ST-ADDR Z-STORE
+        TRUE Z-BRANCH
+        UNLOOP EXIT
+      THEN
+      ST-FORM 127 AND +TO ST-ADDR
+    LOOP
+  THEN
+  0 Z-STORE
+  FALSE Z-BRANCH
+;
+
+( Helper for VAR copy_table )
+0 VALUE CT-SRC
+0 VALUE CT-DST
+0 VALUE CT-SIZE
+
+: DO-COPY-TABLE ( -- )
+  OP0 TO CT-SRC
+  OP1 TO CT-DST
+  OP2 Z-SIGN TO CT-SIZE
+  CT-SIZE 0= IF EXIT THEN
+  CT-DST 0= IF
+    CT-SIZE Z-ABS 0 DO
+      0 CT-SRC I + Z-B!
+    LOOP
+    EXIT
+  THEN
+  CT-SIZE 0< CT-SRC CT-DST > OR IF
+    CT-SIZE Z-ABS 0 DO
+      CT-SRC I + Z-B@  CT-DST I + Z-B!
+    LOOP
+  ELSE
+    CT-SIZE 0 DO
+      CT-SIZE 1- I - DUP CT-SRC + Z-B@
+      SWAP CT-DST + Z-B!
+    LOOP
+  THEN
+;
+
+( Helper for VAR print_table )
+0 VALUE PT-ADDR
+0 VALUE PT-W
+0 VALUE PT-H
+0 VALUE PT-SKIP
+
+: DO-PRINT-TABLE ( -- )
+  OP0 TO PT-ADDR
+  OP1 TO PT-W
+  Z-NOPS 2 > IF OP2 ELSE 1 THEN TO PT-H
+  Z-NOPS 3 > IF OP3 ELSE 0 THEN TO PT-SKIP
+  PT-H 0> IF
+    PT-H 0 DO
+      I 0> IF 13 Z-EMIT THEN
+      PT-W 0> IF
+        PT-W 0 DO
+          PT-ADDR Z-B@ Z-EMIT
+          1 +TO PT-ADDR
+        LOOP
+      THEN
+      PT-SKIP +TO PT-ADDR
+    LOOP
+  THEN
+;
+
+: DO-SREAD ( -- )
+  Z-VER 3 <= IF SHOW-STATUS THEN
+  OP0 Z-B@
+  Z-VER 4 <= IF 1- THEN
+  120 MIN DUP 1 < IF DROP 60 THEN
+  Z-READ-LINE                       ( len )
+  ( Check for @quit escape back to Forth )
+  DUP 5 = IF
+    IN-LINE-BUF C@ 64 =
+    IN-LINE-BUF 1+ C@ 113 = AND IF
+      DROP 0 TO Z-RUNNING EXIT
+    THEN
+  THEN
+  Z-VER 5 >= IF
+    DUP OP0 1+ Z-B!
+    DUP 0> IF
+      DUP 0 DO
+        IN-LINE-BUF I + C@  OP0 2 + I + Z-B!
+      LOOP
+    THEN
+    DROP
+    Z-NOPS 1 > IF
+      OP1 ?DUP IF
+        OP0 SWAP 0 0 Z-TOKENIZE
+      THEN
+    THEN
+    13 Z-STORE
+  ELSE
+    DUP 0> IF
+      DUP 0 DO
+        IN-LINE-BUF I + C@  OP0 1+ I + Z-B!
+      LOOP
+    THEN
+    0 SWAP OP0 1+ + Z-B!
+    Z-NOPS 1 > IF
+      OP1 ?DUP IF
+        OP0 SWAP 0 0 Z-TOKENIZE
+      THEN
+    THEN
+  THEN
+;
+
+: EXEC-VAR ( op -- )
+  CASE
+    0  OF 1 Z-CALL ENDOF
+    1  OF OP2  OP0 OP1 Z-SIGN 2 * + Z-U16  Z-W! ENDOF
+    2  OF OP2  OP0 OP1 Z-SIGN + Z-U16      Z-B! ENDOF
+    3  OF OP0 OP1 OP2 OBJ-PUT-PROP ENDOF
+    4  OF DO-SREAD ENDOF
+    5  OF OP0 Z-EMIT ENDOF
+    6  OF OP0 Z-SIGN Z-PRINT-NUM-STR ENDOF
+    7  OF OP0 Z-RANDOM Z-STORE ENDOF
+    8  OF OP0 Z-PUSH ENDOF
+    9  OF Z-POP OP0 Z-POKE ENDOF
+    10 OF
+      OP0 TO Z-UPPER-H
+      OP0 0> IF Z-SB-BUF 80 Z-BLANK THEN
+    ENDOF
+    11 OF
+      Z-FLUSH-WRAP
+      OP0 TO Z-WIN
+      Z-WIN 1 = IF 0 TO Z-UX 1 TO Z-UY THEN
+    ENDOF
+    12 OF 1 Z-CALL ENDOF
+    13 OF
+      OP0 Z-SIGN -1 = OP0 0= OR IF
+        Z-FLUSH-WRAP CLS 0 TO Z-COL 0 TO Z-ROW-COUNT
+        Z-SB-BUF 80 Z-BLANK
+      ELSE OP0 1 = IF
+        Z-SB-BUF 80 Z-BLANK Z-DRAW-ROW1
+      THEN THEN
+    ENDOF
+    14 OF ( erase_line ) ENDOF
+    15 OF
+      Z-WIN 1 = IF
+        OP1 1- 0 MAX 79 MIN TO Z-UX
+        OP0 1 MAX 24 MIN TO Z-UY
+      THEN
+    ENDOF
+    16 OF 1 OP0 Z-W!  Z-COL 1+ OP0 2 + Z-W! ENDOF
+    17 OF OP0 TO Z-STYLE ENDOF
+    18 OF OP0 TO Z-BUF-MODE ENDOF
+    19 OF
+      OP0 Z-SIGN 3 = IF
+        Z-STR3-DEPTH 16 < IF
+          OP1 Z-STR3-DEPTH CELLS Z-STR3-TAB + !
+          OP1 2 + Z-STR3-DEPTH CELLS Z-STR3-POS + !
+          1 +TO Z-STR3-DEPTH
+        THEN
+      ELSE OP0 Z-SIGN -3 = IF
+        Z-STR3-DEPTH 0> IF
+          -1 +TO Z-STR3-DEPTH
+          Z-STR3-DEPTH CELLS Z-STR3-POS + @
+          Z-STR3-DEPTH CELLS Z-STR3-TAB + @
+          DUP >R - 2 - R> Z-W!
+        THEN
+      THEN THEN
+    ENDOF
+    20 OF ( input_stream ) ENDOF
+    21 OF ( sound_effect ) ENDOF
+    22 OF
+      Z-FLUSH-WRAP
+      0 TO Z-ROW-COUNT
+      KEY-RAW DUP 10 = IF DROP 13 THEN
+      Z-STORE
+    ENDOF
+    23 OF DO-SCAN-TABLE ENDOF
+    24 OF OP0 65535 XOR Z-STORE ENDOF
+    25 OF 0 Z-CALL ENDOF
+    26 OF 0 Z-CALL ENDOF
+    27 OF
+      OP0 OP1
+      Z-NOPS 2 > IF OP2 ELSE 0 THEN
+      Z-NOPS 3 > IF OP3 ELSE 0 THEN
+      Z-TOKENIZE
+    ENDOF
+    28 OF
+      OP0 OP2 + Z-MEM + OP1 Z-ENCODE-WORD
+      Z-VER 3 <= IF 4 ELSE 6 THEN 0 DO
+        ENC-BYTES I + C@  OP3 I + Z-B!
+      LOOP
+    ENDOF
+    29 OF DO-COPY-TABLE ENDOF
+    30 OF DO-PRINT-TABLE ENDOF
+    31 OF OP0 Z-NARGS <= Z-BRANCH ENDOF
+  ENDCASE
+;
+
+: EXEC-EXT ( op -- )
+  CASE
+    0  OF DO-SAVE-OP ENDOF
+    1  OF DO-RESTORE-OP ENDOF
+    2  OF
+      OP1 Z-SIGN DUP 0>= IF
+        OP0 SWAP ZLSHIFT Z-U16
+      ELSE
+        NEGATE OP0 SWAP ZRSHIFT Z-U16
+      THEN
+      Z-STORE
+    ENDOF
+    3  OF
+      OP1 Z-SIGN DUP 0>= IF
+        OP0 Z-SIGN SWAP ZLSHIFT Z-U16
+      ELSE
+        NEGATE OP0 Z-SIGN
+        SWAP 0 DO
+          DUP 0< IF 1- 2 / ELSE 2 / THEN
+        LOOP
+        Z-U16
+      THEN
+      Z-STORE
+    ENDOF
+    4  OF 1 Z-STORE ENDOF
+    9  OF
+      Z-UNDO-MEM Z-UNDO-STATE Z-SNAPSHOT-SAVE
+      1 TO Z-HAS-UNDO
+      1 Z-STORE
+    ENDOF
+    10 OF
+      Z-HAS-UNDO IF
+        Z-UNDO-MEM Z-UNDO-STATE Z-SNAPSHOT-RESTORE
+        2 Z-STORE
+      ELSE
+        0 Z-STORE
+      THEN
+    ENDOF
+    11 OF OP0 Z-EMIT ENDOF
+    12 OF 3 Z-STORE ENDOF
+  ENDCASE
+;
+
+( --- Instruction Fetch & Operand Decoder ----------------------------- )
+: Z-READ-OP ( type -- )
+  DUP 3 = IF DROP EXIT THEN
+  DUP Z-NOPS CELLS Z-OTYPES + !
+  CASE
+    0 OF Z-PC@W ENDOF
+    1 OF Z-PC@B ENDOF
+    2 OF Z-PC@B Z-VAR@ ENDOF
+    0
+  ENDCASE
+  Z-NOPS Z-OP!
+  1 +TO Z-NOPS
+;
+
+: Z-READ-TYPES ( type-byte -- )
+  DUP 6 ZRSHIFT 3 AND DUP 3 = IF 2DROP EXIT THEN Z-READ-OP
+  DUP 4 ZRSHIFT 3 AND DUP 3 = IF 2DROP EXIT THEN Z-READ-OP
+  DUP 2 ZRSHIFT 3 AND DUP 3 = IF 2DROP EXIT THEN Z-READ-OP
+  3 AND DUP 3 = IF DROP EXIT THEN Z-READ-OP
+;
+
+0 VALUE CUR-OP
+
+: Z-STEP ( -- )
+  0 TO Z-NOPS
+  Z-PC@B TO CUR-OP
+  ( 1. Extended Form [0xBE, v5+] )
+  CUR-OP 190 = Z-VER 5 >= AND IF
+    Z-PC@B
+    Z-PC@B Z-READ-TYPES
+    EXEC-EXT
+    EXIT
+  THEN
+  ( 2. Variable Form [0xC0..0xFF] )
+  CUR-OP 192 >= IF
+    CUR-OP 236 = CUR-OP 250 = OR IF
+      Z-PC@B Z-PC@B SWAP Z-READ-TYPES Z-READ-TYPES
+    ELSE
+      Z-PC@B Z-READ-TYPES
+    THEN
+    CUR-OP 224 < IF
+      CUR-OP 31 AND EXEC-2OP
+    ELSE
+      CUR-OP 31 AND EXEC-VAR
+    THEN
+    EXIT
+  THEN
+  ( 3. Short Form [0x80..0xBF] )
+  CUR-OP 128 >= IF
+    CUR-OP 4 ZRSHIFT 3 AND
+    DUP 3 = IF
+      DROP CUR-OP 15 AND EXEC-0OP
+    ELSE
+      Z-READ-OP CUR-OP 15 AND EXEC-1OP
+    THEN
+    EXIT
+  THEN
+  ( 4. Long Form [0x00..0x7F, 2OP] )
+  CUR-OP 64 AND IF 2 ELSE 1 THEN Z-READ-OP
+  CUR-OP 32 AND IF 2 ELSE 1 THEN Z-READ-OP
+  CUR-OP 31 AND EXEC-2OP
+;
+
+( --- Story Loader & Interpreter Main Loop ---------------------------- )
+0 VALUE ZM-SAVED-CWD
+
+: ZM-FIND-STORY ( addr len -- de | 0 )
+  2DUP FIND-ENTRY ?DUP IF
+    NIP NIP EXIT
+  THEN
+  CWD-LBA TO ZM-SAVED-CWD
+  S" work" FIND-ENTRY ?DUP IF
+    DUP DE-DIR? IF
+      DE-LBA TO CWD-LBA
+      2DUP FIND-ENTRY
+      ZM-SAVED-CWD TO CWD-LBA
+      ?DUP IF NIP NIP EXIT THEN
+    ELSE
+      DROP
+    THEN
+  THEN
+  2DROP 0
+;
+
+: ZM-INIT-HDR ( -- )
+  0  Z-B@ TO Z-VER
+  6  Z-W@ TO Z-PC
+  8  Z-W@ TO Z-DICT-BASE
+  10 Z-W@ TO Z-OBJ-BASE
+  12 Z-W@ TO Z-GLOB-BASE
+  14 Z-W@ TO Z-STAT-BASE
+  24 Z-W@ TO Z-ABBR-BASE
+  ( Configure interpreter header flags for 80x24 screen )
+  Z-VER 3 <= IF
+    1 Z-B@ 32 Invert AND 1 Z-B!
+  ELSE
+    1 Z-B@ 13 OR 1 Z-B!
+    24 32 Z-B!
+    80 33 Z-B!
+    80 34 Z-W!
+    24 36 Z-W!
+    1  38 Z-B!
+    1  39 Z-B!
+  THEN
+  0 TO Z-SP
+  0 TO Z-FP
+  0 TO Z-NARGS
+  0 TO Z-NLOCALS
+  0 TO Z-WIN
+  0 TO Z-UPPER-H
+  0 TO Z-COL
+  0 TO Z-ROW-COUNT
+  1 TO Z-BUF-MODE
+  0 TO Z-STR3-DEPTH
+  0 TO WRAP-LEN
+  0 TO Z-HAS-UNDO
+  Z-SB-BUF 80 ZERO-MEM
+  1 TO Z-LOADED
+;
+
+: ZM-LOAD-DE ( de -- flag )
+  DUP DE-DIR? IF DROP ." Is a directory" CR FALSE EXIT THEN
+  DUP DE-LBA TO Z-FILE-LBA
+  DE-SIZE TO Z-FILE-SIZE
+  Z-FILE-SIZE 262144 > IF ." Story file too large" CR FALSE EXIT THEN
+  Z-MEM 262144 ZERO-MEM
+  Z-FILE-SIZE 511 + 512 /
+  DUP 0> IF
+    0 DO
+      Z-FILE-LBA I +  Z-MEM I 512 * +  SECTOR@
+    LOOP
+  ELSE
+    DROP
+  THEN
+  ZM-INIT-HDR
+  TRUE
+;
+
+: ZM-RESUME ( -- )
+  Z-LOADED 0= IF ." No story loaded." CR EXIT THEN
+  1 TO Z-RUNNING
+  CLS
+  Z-SB-BUF C@ 0<> IF Z-DRAW-ROW1 THEN
+  BEGIN
+    Z-RUNNING
+  WHILE
+    Z-STEP
+  REPEAT
+  Z-FLUSH-WRAP
+  Z-CLEAR-ROW1
+  CR ." [Exited Z-Machine. ZM-RESUME:resume  ZM-UNLOAD:unload]" CR
+;
+
+: ZM-START-STR ( addr len -- )
+  ZM-FIND-STORY ?DUP 0= IF
+    ." Story file not found." CR EXIT
+  THEN
+  ZM-LOAD-DE IF
+    ZM-RESUME
+  THEN
+;
+
+: ZM ( "filename" -- )
+  WORD ZM-START-STR
+;
+
+: PLAY ( "filename" -- ) ZM ;
+
+: ZM-UNLOAD ( -- )
+  ZM-ORIG-LATEST LATEST !
+  ZM-ORIG-HERE   HERE !
+  ." Z-Machine unloaded (" UNUSED . ." cells free)" CR
+;
+CD ..
+." f64OS Z-Machine (v1-v5) ready. Type ZM <file>." CR
+." (From current directory or the WORK directory)" CR
