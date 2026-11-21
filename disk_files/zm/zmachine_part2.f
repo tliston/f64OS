@@ -1,5 +1,5 @@
 ( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f       )
-( This is part 2, zmachine2.f                            )
+( This is part 2 of 2, zmachine_part2.f                  )
 
 : Z-TOKENIZE ( text-zaddr parse-zaddr dict-zaddr flag -- )
   TO TK-FLAG

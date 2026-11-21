@@ -1,9 +1,5 @@
-( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f - part 1 of 2       )
-( Usage:                                                                )
-(   INCLUDE zmachine.f                                                  )
-(   ZM zork1.z5          [or PLAY zork1.z5]                             )
-(   ZM-RESUME            [resume current game session]                  )
-(   ZM-UNLOAD            [unload interpreter & free dictionary memory]  )
+( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f       )
+( This is part 1 of 2, zmachine_part1.f                  )
 
 DECIMAL
 HERE @ LATEST @
