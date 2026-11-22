@@ -12,7 +12,7 @@ A 64-bit, bootable, preemptively multitasking kernel that loads and runs my 64-b
 * Preemptively multitasking (w/Yield_task to allow for smoother operation...).
 * Status bar (implemented as a second task) shows stack depth and clock ticks.
 * Provides a minimal filesystem with directories and subdirectories.
-  * LS / CD / MKDIR/ RM / CREATE-FILE / INCLUDE.
+  * LS / CD / MKDIR/ RM / RMDIR / CREATE-FILE / INCLUDE.
 * Has a minimal screen-based text editor, written in Forth (edit.f), with the ability to drop back to the Forth interpreter to test code.
 * The text editor now keeps track of indentation level (TAB) and saves the current file with the HOME key.
 * Forth is implemented with a minimal set of bootstrapping words in x64 assembly. The remainder of the language is written in Forth itself.
