@@ -359,3 +359,5 @@ ED-MAX ALLOT CONSTANT ED-PACK-BUF
     ED-LOAD
     FE
 ;
+
+." Editor loaded. Type EDIT <file> or EDIT-UNLOAD to restore." CR
