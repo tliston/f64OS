@@ -166,4 +166,4 @@ INIT-P10
     NBUF NB-LEN
 ;
 
-INCLUDE bscreen.f
+INCLUDE /basic/bscreen.f

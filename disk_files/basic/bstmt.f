@@ -540,4 +540,4 @@ XT' EXEC-STMT 'EXEC-STMT !
     AGAIN
 ;
 
-INCLUDE bmain.f
+INCLUDE /basic/bmain.f

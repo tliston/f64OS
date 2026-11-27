@@ -187,4 +187,4 @@ XT' CHROUT 'LOUT !
 ( Move TXTPTR to the 0 at the end of the line )
 : SKIP-LINE ( -- ) BEGIN TXTPTR C@ WHILE NEXTC REPEAT ;
 
-INCLUDE beval.f
+INCLUDE /basic/beval.f

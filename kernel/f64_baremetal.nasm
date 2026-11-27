@@ -681,7 +681,7 @@ _WORD:
         jne .comment
         jmp .ws
 
-word_buffer: times 32 db 0
+word_buffer: times 128 db 0
 
 ;	As well as reading in words we'll need to read in numbers and for that we are using a function
 ;	called NUMBER.  This parses a numeric string such as one returned by WORD and pushes the

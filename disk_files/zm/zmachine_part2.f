@@ -489,6 +489,9 @@
     10 OF
       OP0 TO Z-UPPER-H
       OP0 0> IF Z-SB-BUF 80 Z-BLANK THEN
+      Z-ROW-COUNT 0= Z-COL 0= AND IF
+        0 Z-UPPER-H 1 MAX 1+ AT-XY
+      THEN
     ENDOF
     11 OF
       Z-FLUSH-WRAP
@@ -498,7 +501,10 @@
     12 OF 1 Z-CALL ENDOF
     13 OF
       OP0 Z-SIGN -1 = OP0 0= OR IF
-        Z-FLUSH-WRAP CLS 0 TO Z-COL 0 TO Z-ROW-COUNT
+        OP0 Z-SIGN -1 = IF 0 TO Z-UPPER-H THEN
+        Z-FLUSH-WRAP CLS
+        0 Z-UPPER-H 1 MAX 1+ AT-XY
+        0 TO Z-COL 0 TO Z-ROW-COUNT
         Z-SB-BUF 80 Z-BLANK
       ELSE OP0 1 = IF
         Z-SB-BUF 80 Z-BLANK Z-DRAW-ROW1
@@ -667,25 +673,6 @@
 ;
 
 ( --- Story Loader & Interpreter Main Loop ---------------------------- )
-0 VALUE ZM-SAVED-CWD
-
-: ZM-FIND-STORY ( addr len -- de | 0 )
-  2DUP FIND-ENTRY ?DUP IF
-    NIP NIP EXIT
-  THEN
-  CWD-LBA TO ZM-SAVED-CWD
-  S" work" FIND-ENTRY ?DUP IF
-    DUP DE-DIR? IF
-      DE-LBA TO CWD-LBA
-      2DUP FIND-ENTRY
-      ZM-SAVED-CWD TO CWD-LBA
-      ?DUP IF NIP NIP EXIT THEN
-    ELSE
-      DROP
-    THEN
-  THEN
-  2DROP 0
-;
 
 : ZM-INIT-HDR ( -- )
   0  Z-B@ TO Z-VER
@@ -745,6 +732,7 @@
   Z-LOADED 0= IF ." No story loaded." CR EXIT THEN
   1 TO Z-RUNNING
   CLS
+  0 Z-UPPER-H 1 MAX 1+ AT-XY
   Z-SB-BUF C@ 0<> IF Z-DRAW-ROW1 THEN
   BEGIN
     Z-RUNNING
@@ -757,7 +745,11 @@
 ;
 
 : ZM-START-STR ( addr len -- )
-  ZM-FIND-STORY ?DUP 0= IF
+  ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+  DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." Story file not found." CR EXIT THEN
+  FIND-ENTRY
+  ORIG-CWD TO CWD-LBA
+  ?DUP 0= IF
     ." Story file not found." CR EXIT
   THEN
   ZM-LOAD-DE IF
@@ -776,6 +768,5 @@
   ZM-ORIG-HERE   HERE !
   ." Z-Machine unloaded (" UNUSED . ." cells free)" CR
 ;
-CD ..
+
 ." f64OS Z-Machine (v1-v5) ready. Type ZM <file>." CR
-." (From current directory or the WORK directory)" CR

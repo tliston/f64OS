@@ -76,4 +76,4 @@ CODEMEM VALUE CODE-HERE
 : ILLQ ( -- ) E-ILLQ THROW ;
 : ABS ( n -- u ) DUP 0< IF NEGATE THEN ;
 
-INCLUDE bnative.f
+INCLUDE /basic/bnative.f

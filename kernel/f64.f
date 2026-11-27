@@ -1497,23 +1497,6 @@ DECIMAL
     DROP
 ;
 
-: LS ( -- )
-    LOAD-DIR
-    64 0 DO
-        DIR-BUF I 32 * +
-        DUP C@ 0<> IF                  ( Non-empty slot? )
-            DUP DE-NAME. SPACE
-            DUP DE-DIR? IF
-                ." <DIR>"
-            ELSE
-                DUP DE-SIZE . ." bytes"
-            THEN
-            CR
-        THEN
-        DROP
-    LOOP
-;
-
 ( Uppercase a string - useful for comparisons... )
 : UPPER ( c -- C )
     DUP 97 123 WITHIN IF
@@ -1569,13 +1552,128 @@ DECIMAL
     LOOP
 ;
 
+0 VALUE ORIG-CWD
+0 VALUE PATH-ADDR
+0 VALUE PATH-LEN
+
+: FIND-SLASH ( addr len -- idx | -1 )
+    DUP 0<= IF 2DROP -1 EXIT THEN
+    0 DO
+        DUP I + C@ 47 = IF
+            DROP I UNLOOP EXIT
+        THEN
+    LOOP
+    DROP -1
+;
+
+: ENTER-PATH-DIR ( addr len -- leaf-addr leaf-len flag )
+    CWD-LBA TO ORIG-CWD
+    TO PATH-LEN
+    TO PATH-ADDR
+
+    \ Check for leading '/' (root directory)
+    PATH-LEN 0> IF
+        PATH-ADDR C@ 47 = IF
+            128 TO CWD-LBA
+            1 +TO PATH-ADDR
+            -1 +TO PATH-LEN
+        THEN
+    THEN
+
+    \ Walk each 'dir/' segment
+    BEGIN
+        PATH-ADDR PATH-LEN FIND-SLASH
+        DUP 0>=
+    WHILE
+        DUP 0> IF
+            PATH-ADDR OVER FIND-ENTRY
+            DUP 0= IF
+                2DROP
+                ORIG-CWD TO CWD-LBA
+                ." Path not found." CR
+                0 0 FALSE EXIT
+            THEN
+            DUP DE-DIR? NOT IF
+                2DROP
+                ORIG-CWD TO CWD-LBA
+                ." Path not found." CR
+                0 0 FALSE EXIT
+            THEN
+            DE-LBA TO CWD-LBA
+        THEN
+        1+
+        DUP +TO PATH-ADDR
+        NEGATE +TO PATH-LEN
+    REPEAT
+    DROP
+    PATH-ADDR PATH-LEN TRUE
+;
+
+: HAS-ARG? ( -- flag )
+    BEGIN
+        CURRKEY @ BUFFTOP @ < IF
+            CURRKEY @ C@ DUP 32 = SWAP 9 = OR
+        ELSE
+            FALSE
+        THEN
+    WHILE
+        1 CURRKEY +!
+    REPEAT
+    CURRKEY @ BUFFTOP @ < IF
+        CURRKEY @ C@ 10 <>
+    ELSE
+        FALSE
+    THEN
+;
+
+: LS ( ["dirname"] -- )
+    CWD-LBA TO ORIG-CWD
+    HAS-ARG? IF
+        WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+        DUP 0> IF
+            FIND-ENTRY
+            ?DUP 0= IF
+                ORIG-CWD TO CWD-LBA
+                ." Not found" CR EXIT
+            THEN
+            DUP DE-DIR? NOT IF
+                DROP ORIG-CWD TO CWD-LBA
+                ." Not a directory" CR EXIT
+            THEN
+            DE-LBA TO CWD-LBA
+        ELSE
+            2DROP                      ( Handle "ls /" or trailing slash "ls work/" )
+        THEN
+    THEN
+    LOAD-DIR
+    64 0 DO
+        DIR-BUF I 32 * +
+        DUP C@ 0<> IF                  ( Non-empty slot? )
+            DUP DE-NAME. SPACE
+            DUP DE-DIR? IF
+                ." <DIR>"
+            ELSE
+                DUP DE-SIZE . ." bytes"
+            THEN
+            CR
+        THEN
+        DROP
+    LOOP
+    ORIG-CWD TO CWD-LBA
+;
+
 : CD ( "dirname" -- )
-    WORD FIND-ENTRY
+    HAS-ARG? NOT IF 128 TO CWD-LBA EXIT THEN
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP EXIT THEN          ( Handle "cd /" or trailing slash "cd work/" )
+    FIND-ENTRY
     ?DUP 0= IF
+        ORIG-CWD TO CWD-LBA
         ." Not found" CR EXIT
     THEN
     DUP DE-DIR? NOT IF
-        DROP ." Not a directory" CR EXIT
+        DROP ORIG-CWD TO CWD-LBA
+        ." Not a directory" CR EXIT
     THEN
     DE-LBA TO CWD-LBA
 ;
@@ -1584,7 +1682,10 @@ DECIMAL
 0 VALUE CAT-SIZE
 
 : CAT ( "filename" -- )
-    WORD FIND-ENTRY
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." File not found" CR EXIT THEN
+    FIND-ENTRY
+    ORIG-CWD TO CWD-LBA
     ?DUP 0= IF
         ." File not found" CR EXIT
     THEN
@@ -1613,7 +1714,10 @@ DECIMAL
 0 VALUE INC-SECTORS
 
 : INCLUDE ( "filename" -- )
-    WORD FIND-ENTRY
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." File not found" CR EXIT THEN
+    FIND-ENTRY
+    ORIG-CWD TO CWD-LBA
     ?DUP 0= IF
         ." File not found" CR EXIT
     THEN
@@ -1650,15 +1754,20 @@ DECIMAL
 ;
 
 : RM ( "filename" -- )
-    WORD FIND-ENTRY
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." File not found" CR EXIT THEN
+    FIND-ENTRY
     ?DUP 0= IF
+        ORIG-CWD TO CWD-LBA
         ." File not found" CR EXIT
     THEN
     DUP DE-DIR? IF
-        DROP ." Is a directory" CR EXIT
+        DROP ORIG-CWD TO CWD-LBA
+        ." Is a directory" CR EXIT
     THEN
     32 ZERO-MEM
     SAVE-DIR
+    ORIG-CWD TO CWD-LBA
 ;
 
 0 VALUE CHK-LBA
@@ -1678,21 +1787,28 @@ DECIMAL
 ;
 
 : RMDIR ( "dirname" -- )
-    WORD FIND-ENTRY
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." Directory not found" CR EXIT THEN
+    FIND-ENTRY
     ?DUP 0= IF
+        ORIG-CWD TO CWD-LBA
         ." Directory not found" CR EXIT
     THEN
     DUP DE-DIR? NOT IF
-        DROP ." Not a directory" CR EXIT
+        DROP ORIG-CWD TO CWD-LBA
+        ." Not a directory" CR EXIT
     THEN
     DUP 1+ C@ 46 = IF ( second char is '.' -> '..' )
-        DROP ." Cannot remove .." CR EXIT
+        DROP ORIG-CWD TO CWD-LBA
+        ." Cannot remove .." CR EXIT
     THEN
     DUP DE-LBA DIR-EMPTY? NOT IF
-        DROP ." Directory not empty" CR EXIT
+        DROP ORIG-CWD TO CWD-LBA
+        ." Directory not empty" CR EXIT
     THEN
     32 ZERO-MEM
     SAVE-DIR
+    ORIG-CWD TO CWD-LBA
 ;
 
 0 VALUE SAVED-CWD
@@ -1740,19 +1856,20 @@ DECIMAL
 0 VALUE MK-DE
 
 : MKDIR ( "dirname" -- )
-    WORD
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." Invalid name" CR EXIT THEN
     DUP 16 > IF DROP 16 THEN
     TO MK-LEN
     MK-NAME-BUF MK-LEN CMOVE           ( Save name into MK-NAME-BUF )
 
     MK-NAME-BUF MK-LEN FIND-ENTRY ?DUP IF
-        DROP ." Already exists" CR EXIT
+        DROP ." Already exists" CR ORIG-CWD TO CWD-LBA EXIT
     THEN
 
     4 ALLOC-SECTORS TO MK-LBA          ( Allocate 4 sectors; reloads DIR-BUF )
 
     FREE-ENTRY ?DUP 0= IF
-        ." Directory full" CR EXIT
+        ." Directory full" CR ORIG-CWD TO CWD-LBA EXIT
     THEN
     TO MK-DE
 
@@ -1775,6 +1892,7 @@ DECIMAL
     MK-LBA MK-DE 16 + !
     2048 MK-DE 24 + !
     SAVE-DIR
+    ORIG-CWD TO CWD-LBA
 ;
 
 0 VALUE WF-ADDR
@@ -1786,7 +1904,8 @@ DECIMAL
 : WRITE-FILE ( addr len "filename" -- )
     TO WF-SIZE
     TO WF-ADDR
-    WORD
+    WORD ENTER-PATH-DIR NOT IF 2DROP EXIT THEN
+    DUP 0= IF 2DROP ORIG-CWD TO CWD-LBA ." Invalid name" CR EXIT THEN
     DUP 16 > IF DROP 16 THEN
     TO MK-LEN
     MK-NAME-BUF MK-LEN CMOVE
@@ -1794,7 +1913,7 @@ DECIMAL
     ( If file already exists, remove its old directory entry first )
     MK-NAME-BUF MK-LEN FIND-ENTRY ?DUP IF
         DUP DE-DIR? IF
-            DROP ." Is a directory" CR EXIT
+            DROP ." Is a directory" CR ORIG-CWD TO CWD-LBA EXIT
         THEN
         32 ZERO-MEM
         SAVE-DIR
@@ -1806,7 +1925,7 @@ DECIMAL
     ALLOC-SECTORS TO WF-LBA
 
     FREE-ENTRY ?DUP 0= IF
-        ." Directory full" CR EXIT
+        ." Directory full" CR ORIG-CWD TO CWD-LBA EXIT
     THEN
     TO WF-DE
 
@@ -1831,6 +1950,52 @@ DECIMAL
     WF-LBA WF-DE 16 + !
     WF-SIZE WF-DE 24 + !
     SAVE-DIR
+    ORIG-CWD TO CWD-LBA
+;
+
+: DE-PRINT-NAME ( de -- )
+    16 0 DO
+        DUP I + C@
+        I 0= IF 127 AND THEN
+        ?DUP IF EMIT THEN
+    LOOP
+    DROP
+;
+
+: PRINT-LBA-NAME ( child-lba -- )
+    64 0 DO
+        DIR-BUF I 32 * +
+        DUP C@ 0<> IF
+            2DUP DE-LBA = IF
+                DE-PRINT-NAME
+                DROP UNLOOP EXIT
+            THEN
+        THEN
+        DROP
+    LOOP
+    DROP
+;
+
+: _PWD ( lba -- )
+    DUP 128 = IF DROP EXIT THEN
+    DUP TO CWD-LBA
+    S" .." FIND-ENTRY
+    ?DUP 0= IF DROP EXIT THEN
+    DE-LBA
+    DUP RECURSE
+    TO CWD-LBA
+    LOAD-DIR
+    47 EMIT
+    PRINT-LBA-NAME
+;
+
+: PWD ( -- )
+    CWD-LBA 128 = IF
+        47 EMIT CR EXIT
+    THEN
+    CWD-LBA TO ORIG-CWD
+    CWD-LBA _PWD CR
+    ORIG-CWD TO CWD-LBA
 ;
 
 (

@@ -809,4 +809,4 @@ BIND-PRINT-ZSTR
   1 +TO TK-CNT
 ;
 
-INCLUDE zmachine_part2.f
+INCLUDE /zm/zmachine_part2.f

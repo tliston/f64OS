@@ -5,5 +5,4 @@
 (   ZM-RESUME            [resume current game session]                  )
 (   ZM-UNLOAD            [unload interpreter & free dictionary memory]  )
 
-CD zm
-INCLUDE zmachine_part1.f
+INCLUDE /zm/zmachine_part1.f

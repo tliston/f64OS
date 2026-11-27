@@ -486,4 +486,4 @@ INIT-ESC
     2DROP
 ;
 
-INCLUDE bstmt.f
+INCLUDE /basic/bstmt.f
