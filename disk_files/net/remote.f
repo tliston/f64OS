@@ -9,13 +9,13 @@ CONSTANT REM-ORIG-HERE
 
 : ENSURE-NET ( -- )
     S" TCP-ACCEPT" FIND 0= IF
-        ." /net.f not loaded; loading /net.f..." CR
+        ." /net/net.f not loaded; loading /net.f..." CR
         REM-ORIG-LATEST LATEST !
         REM-ORIG-HERE   HERE !
         INCLUDE
         10 BUFFTOP @ C!
         1 BUFFTOP +!
-        S" INCLUDE /remote.f" BUFFTOP @ SWAP DUP >R CMOVE
+        S" INCLUDE /net/remote.f" BUFFTOP @ SWAP DUP >R CMOVE
         R> BUFFTOP +!
         10 BUFFTOP @ C!
         1 BUFFTOP +!
@@ -24,7 +24,7 @@ CONSTANT REM-ORIG-HERE
     THEN
 ;
 
-ENSURE-NET /net.f
+ENSURE-NET /net/net.f
 
 32768 ALLOT CONSTANT REM-OUT-BUF
 256   ALLOT CONSTANT REM-IN-BUF
