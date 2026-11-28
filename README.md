@@ -22,6 +22,6 @@ A 64-bit, bootable, preemptively multitasking kernel that loads and runs my 64-b
 * Runs DOOM as a native 64-bit binary, loaded from the filesystem by Forth. See [doom/README.md](doom/README.md).
 * Includes a Forth-based 64-bit x86-64 assembler (`asm.f`), loadable via `INCLUDE`, capable of assembling inline native words or standalone flat binaries executed via `CALL-NATIVE`. See [ASM_F.md](ASM_F.md) for more information.
 * Includes f64 BASIC V2, a Commodore 64 BASIC V2 interpreter written in Forth, with a C64 screen in VGA mode 13h. It runs the Thatcher program (`thatcher_c64.txt`). See [BASIC.md](BASIC.md).
-* Includes a Forth-based Z-Machine interpreter (Z1 - Z5) for Interactive Fiction (IF) games (ex. Zork).
+* Includes a Forth-based Z-Machine interpreter (v1-v5, v7-v8) for Interactive Fiction (IF) games (ex. Zork).
 * NEW: f64OS now has a minimal TCP/IP stack. See [NET_F.md](NET_F.md) for additional details.
 * NEW: remote.f leverages the TCP/IP stack to provide TELNETD / NET-RECV / NET-SEND / HTTP-FETCH. See [REMOTE_F.md](REMOTE_F.md) for more information.
