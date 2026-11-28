@@ -1,5 +1,5 @@
-( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f       )
-( This is part 2 of 2, zmachine_part2.f                  )
+( f64OS Z-Machine Interpreter [v1-v5, v7-v8] - zmachine.f )
+( This is part 2 of 2, zm2.f                              )
 
 : Z-TOKENIZE ( text-zaddr parse-zaddr dict-zaddr flag -- )
   TO TK-FLAG
@@ -140,7 +140,7 @@
   Z-NLOCALS   OVER 5 CELLS + !
   Z-LOCALS    SWAP 6 CELLS + 16 CELLS CMOVE
   1 +TO Z-FP
-  CALL-PADDR Z-UNPACK TO Z-PC
+  CALL-PADDR Z-UNPACK-R TO Z-PC
   Z-PC@B 15 MIN TO Z-NLOCALS
   16 0 DO 0 I CELLS Z-LOCALS + ! LOOP
   Z-VER 4 <= IF
@@ -284,7 +284,7 @@
     10 OF OP0 OBJ-PRINT-NAME ENDOF
     11 OF OP0 Z-RET ENDOF
     12 OF OP0 Z-SIGN 2 - +TO Z-PC ENDOF
-    13 OF OP0 Z-UNPACK Z-PRINT-ZSTR DROP ENDOF
+    13 OF OP0 Z-UNPACK-S Z-PRINT-ZSTR DROP ENDOF
     14 OF OP0 Z-PEEK Z-STORE ENDOF
     15 OF
       Z-VER 4 <= IF
@@ -714,8 +714,8 @@
   DUP DE-DIR? IF DROP ." Is a directory" CR FALSE EXIT THEN
   DUP DE-LBA TO Z-FILE-LBA
   DE-SIZE TO Z-FILE-SIZE
-  Z-FILE-SIZE 262144 > IF ." Story file too large" CR FALSE EXIT THEN
-  Z-MEM 262144 ZERO-MEM
+  Z-FILE-SIZE 524288 > IF ." Story file too large" CR FALSE EXIT THEN
+  Z-MEM 524288 ZERO-MEM
   Z-FILE-SIZE 511 + 512 /
   DUP 0> IF
     0 DO
@@ -769,4 +769,4 @@
   ." Z-Machine unloaded (" UNUSED . ." cells free)" CR
 ;
 
-." f64OS Z-Machine (v1-v5) ready. Type ZM <file>." CR
+." f64OS Z-Machine (v1-v5, v7-v8) ready. Type ZM <file>." CR

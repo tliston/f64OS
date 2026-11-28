@@ -1,4 +1,4 @@
-( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f - loadervvvvv        )
+( f64OS Z-Machine Interpreter [v1-v5, v7-v8] - zmachine.f               )
 ( Usage:                                                                )
 (   INCLUDE /zm/zmachine.f                                                  )
 (   ZM zork1.z5          [or PLAY zork1.z5]                             )

@@ -1,5 +1,5 @@
-( f64OS Z-Machine Interpreter [v1-v5] - zmachine.f       )
-( This is part 1 of 2, zmachine_part1.f                  )
+( f64OS Z-Machine Interpreter [v1-v5, v7-v8] - zmachine.f )
+( This is part 1 of 2, zm1.f                              )
 
 DECIMAL
 HERE @ LATEST @
@@ -53,7 +53,7 @@ CONSTANT ZM-ORIG-HERE
 ;
 
 ( --- Z-Machine Memory & State Buffers -------------------------------- )
-262144 ALLOT CONSTANT Z-MEM
+524288 ALLOT CONSTANT Z-MEM
 65536  ALLOT CONSTANT Z-UNDO-MEM
 4096   CELLS ALLOT CONSTANT Z-STACK
 16     CELLS ALLOT CONSTANT Z-LOCALS
@@ -97,9 +97,9 @@ CONSTANT ZM-ORIG-HERE
 
 ( --- Story Memory Accessors ------------------------------------------ )
 
-: Z-B@ ( zaddr -- u8 ) 262143 AND Z-MEM + C@ ;
+: Z-B@ ( zaddr -- u8 ) 524287 AND Z-MEM + C@ ;
 
-: Z-B! ( u8 zaddr -- ) 262143 AND Z-MEM + C! ;
+: Z-B! ( u8 zaddr -- ) 524287 AND Z-MEM + C! ;
 
 : Z-W@ ( zaddr -- u16 )
   DUP Z-B@ 256 * SWAP 1+ Z-B@ OR
@@ -119,7 +119,18 @@ CONSTANT ZM-ORIG-HERE
 ;
 
 : Z-UNPACK ( paddr -- addr )
-  Z-U16 Z-VER 3 <= IF 2 * ELSE 4 * THEN
+  Z-U16
+  Z-VER 3 <= IF 2 *
+  ELSE Z-VER 8 = IF 8 *
+  ELSE 4 * THEN THEN
+;
+
+: Z-UNPACK-R ( paddr -- addr )
+  Z-UNPACK Z-VER 7 = IF 40 Z-W@ 8 * + THEN
+;
+
+: Z-UNPACK-S ( paddr -- addr )
+  Z-UNPACK Z-VER 7 = IF 42 Z-W@ 8 * + THEN
 ;
 
 ( --- Evaluation Stack & Variables ------------------------------------ )
