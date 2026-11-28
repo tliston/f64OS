@@ -24,4 +24,4 @@ A 64-bit, bootable, preemptively multitasking kernel that loads and runs my 64-b
 * Includes f64 BASIC V2, a Commodore 64 BASIC V2 interpreter written in Forth, with a C64 screen in VGA mode 13h. It runs the Thatcher program (`thatcher_c64.txt`). See [BASIC.md](BASIC.md).
 * Includes a Forth-based Z-Machine interpreter (Z1 - Z5) for Interactive Fiction (IF) games (ex. Zork).
 * NEW: f64OS now has a minimal TCP/IP stack. See [NET_F.md](NET_F.md) for additional details.
-* NEW: remote.f leverages the TCP/IP stack to provide TELNETD / NET-RECV / NET-SEND / HTTP-FETCH.
+* NEW: remote.f leverages the TCP/IP stack to provide TELNETD / NET-RECV / NET-SEND / HTTP-FETCH. See [REMOTE_F.md](REMOTE_F.md) for more information.
