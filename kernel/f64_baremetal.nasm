@@ -611,9 +611,6 @@ defcode "CLS", CLS
         call vga_CLS
         NEXT
 
-align 8, db 0
-emit_ptr: dq emit_buffer
-
 ;	Back to input, WORD is a FORTH word which reads the next full word of input.
 ;
 ;	What it does in detail is that it first skips any blanks (spaces, tabs, newlines and so on).
@@ -1740,6 +1737,9 @@ native_saved_rsi dq 0
 native_saved_rbp dq 0
 native_saved_r15 dq 0
 
+defconst "EMIT-CAP", EMIT_CAP, emit_cap
+defconst "EMIT-LEN", EMIT_LEN, emit_len
+
 ; ----------------------------------------------
 ; NOTE: ALWAYS ADD CODE HERE!!!
 ;-----------------------------------------------
@@ -1773,10 +1773,6 @@ iterator_stack_top:
 align 8, db 0
 buffer:
     times BUFFER_SIZE db 0
-
-align 8, db 0
-emit_buffer:
-    times 4096 db 0
 
 f64_bootstrap_start:
     incbin "kernel/f64_stripped.f"

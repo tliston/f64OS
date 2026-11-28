@@ -8,6 +8,8 @@ con_y db 0
 blank_h db 0
 blank_l db 0
 blanking dq 0
+emit_cap dq 0
+emit_len dq 0
 
 ;---Constants-----------------------------------------------------------------------
 VRAM equ 0xB8000
@@ -86,6 +88,21 @@ vga_print_chr:
     push rdi
     push r8
     push r9
+    mov r8, [emit_cap]
+    test r8, r8
+    jz .no_cap
+    mov rdi, [emit_len]
+    cmp rdi, 32766
+    jae .no_cap
+    cmp al, 0x0A
+    jne .cap_store
+    mov byte [r8 + rdi], 0x0D
+    inc rdi
+.cap_store:
+    mov [r8 + rdi], al
+    inc rdi
+    mov [emit_len], rdi
+.no_cap:
     movzx r8, byte[con_x]
     movzx r9, byte[con_y]
     ; Compute rdi = VRAM + (r9 * VGA_WIDTH * 2) + (r8 * 2)
